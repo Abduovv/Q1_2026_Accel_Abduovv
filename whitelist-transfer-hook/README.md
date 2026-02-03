@@ -1,6 +1,7 @@
 # Whitelist Transfer Hook
 This example demonstrates how to implement a transfer hook using the SPL Token 2022 Transfer Hook interface to enforce whitelist restrictions on token transfers.
 In this example, only whitelisted addresses will be able to transfer tokens that have this transfer hook enabled, providing fine-grained access control over token movements.
+
 ---
 ## Let's walk through the architecture:
 For this program, we will have multiple state accounts:
@@ -61,6 +62,7 @@ impl<'info> InitializeWhitelist<'info> {
 }
 ```
 This instruction creates the Whitelist account for the specified user and immediately marks them as whitelisted.
+
 ---
 ### The admin will be able to update the whitelist status of existing users:
 ```rust
@@ -94,6 +96,7 @@ impl<'info> UpdateWhitelist<'info> {
 }
 ```
 This instruction updates the `is_whitelisted` flag for the user associated with the provided Whitelist PDA. No account reallocation is needed because the account size is fixed.
+
 ---
 ### The system will need to initialize extra account metadata for the transfer hook:
 ```rust
@@ -117,6 +120,7 @@ pub struct InitializeExtraAccountMetaList<'info> {
 }
 ```
 ### Functionality for InitializeExtraAccountMetaList:
+
 ```rust
 impl<'info> InitializeExtraAccountMetaList<'info> {
     pub fn extra_account_metas() -> Result<Vec<ExtraAccountMeta>> {
@@ -138,6 +142,7 @@ impl<'info> InitializeExtraAccountMetaList<'info> {
 }
 ```
 This defines a single extra account: the Whitelist PDA derived from the source token owner's public key. The token program will automatically append this account to every transfer hook execution.
+
 ---
 ### The transfer hook will validate every token transfer:
 ```rust
@@ -211,5 +216,6 @@ impl<'info> TransferHook<'info> {
 }
 ```
 The hook first verifies that it is being called during an actual transfer by inspecting the `transferring` flag in the source token account's TransferHook extension. It then checks whether the source token owner has `is_whitelisted = true` in their corresponding Whitelist account. If the owner is whitelisted, the transfer proceeds; otherwise, it fails. Non-existent Whitelist accounts will cause deserialization to fail, effectively preventing transfers by uninitialized users.
+
 ---
 This whitelist transfer hook provides a robust access control mechanism for Token 2022 mints, ensuring that only pre-approved addresses can transfer tokens while maintaining the standard token interface that users and applications expect.
