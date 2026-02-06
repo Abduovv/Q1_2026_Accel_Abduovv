@@ -5,3 +5,7 @@ test-ledger/
 dist/
 .cache/
 .DS_Store
+target/
+**/target/
+.DS_Store
+
