@@ -9,3 +9,7 @@ target/
 **/target/
 .DS_Store
 
+target/
+**/target/
+.DS_Store
+node_modules/
