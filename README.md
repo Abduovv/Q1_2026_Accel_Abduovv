@@ -140,18 +140,3 @@ cargo run
 | **TukTuk** | Permissionless crank scheduler for automation |
 | **MagicBlock Oracle** | GPT oracle and VRF integration |
 | **Borsh** | Binary serialization for persistent storage |
-
----
-
-## Devnet Deployments
-
-| Project | Program ID | Additional Accounts |
-|---------|------------|---------------------|
-| gpt-oracle | `8d6wKSQNNoqSu98EgLn5ZotmJMZHq8cgcfLGsiubUqZe` | Oracle: `LLMrieZMpbJFwN52WgmBNMxYojrpRVYXdC1RCweEbab` |
-| tuktuk-escrow | `92t1k1s6XLTzrFzKvHFRHVX8At6DuzP9BSzkXT33pHjA` | Task Queue: `UwdRmurFA11isBpDNY9HNcoL95Pnt4zNYE2cd1SQwn2` |
-
----
-
-## License
-
-MIT
