@@ -3,8 +3,10 @@
 
 use anchor_lang::prelude::*;
 
-mod state;
+pub mod constants;
+mod error;
 mod instructions;
+mod state;
 mod tests;
 
 use instructions::*;
@@ -15,17 +17,18 @@ declare_id!("FircrADQ2wgGuvpm8qneNCfKM7o5zoHTWnDQxngpTQ3J");
 pub mod anchor_escrow {
     use super::*;
 
-    pub fn make(ctx: Context<Make>, seed: u64, deposit: u64, receive: u64) -> Result<()> {
-        ctx.accounts.init_escrow(seed, receive, &ctx.bumps)?;
-        ctx.accounts.deposit(deposit)
+    pub fn make(ctx: Context<Make>, offer_id: u64, lock_amount: u64, target_amount: u64) -> Result<()> {
+        ctx.accounts.setup_escrow(offer_id, target_amount, &ctx.bumps)?;
+        ctx.accounts.lock_funds(lock_amount)
     }
 
     pub fn refund(ctx: Context<Refund>) -> Result<()> {
-        ctx.accounts.refund_and_close_vault()
+        ctx.accounts.return_funds_and_close()
     }
 
     pub fn take(ctx: Context<Take>) -> Result<()> {
-        ctx.accounts.deposit()?;
-        ctx.accounts.withdraw_and_close_vault()
+        ctx.accounts.verify_conditions()?;
+        ctx.accounts.transfer_payment()?;
+        ctx.accounts.release_and_close()
     }
 }

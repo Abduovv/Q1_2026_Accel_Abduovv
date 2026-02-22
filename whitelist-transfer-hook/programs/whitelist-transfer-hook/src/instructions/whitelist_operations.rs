@@ -1,60 +1,68 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface::Mint;
 
-use crate::state::Whitelist;
+use crate::constants::{CONFIG_SEED, WHITELIST_ENTRY_SEED};
+use crate::error::ErrorCode;
+use crate::state::config::Config;
+use crate::state::whitelist::Whitelist;
 
 #[derive(Accounts)]
-pub struct InitializeWhitelist<'info> {
+#[instruction(address: Pubkey)]
+pub struct AddToWhiteList<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
-
-    /// CHECK: It's safe because we don't read or write from this account
-    pub user: UncheckedAccount<'info>,
+    #[account(
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.admin == admin.key() @ ErrorCode::Unauthorized,
+    )]
+    pub config: Account<'info, Config>,
     #[account(
         init,
         payer = admin,
-        space = 8 + Whitelist::INIT_SPACE,
-        seeds = [b"whitelist", user.key().as_ref()],
+        space = Whitelist::LEN,
+        seeds = [WHITELIST_ENTRY_SEED, address.as_ref()],
         bump
     )]
-    pub whitelist: Account<'info, Whitelist>,
+    pub whitelist_entry: Account<'info, Whitelist>,
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+#[instruction(address: Pubkey)]
+pub struct RemoveFromWhiteList<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    #[account(
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.admin == admin.key() @ ErrorCode::Unauthorized,
+    )]
+    pub config: Account<'info, Config>,
+    #[account(
+        mut,
+        close = admin,
+        seeds = [WHITELIST_ENTRY_SEED, address.as_ref()],
+        bump = whitelist_entry.bump
+    )]
+    pub whitelist_entry: Account<'info, Whitelist>,
+    pub system_program: Program<'info, System>,
+}
 
-impl<'info> InitializeWhitelist<'info> {
-    pub fn initialize_whitelist(&mut self, bumps: InitializeWhitelistBumps) -> Result<()> {
-        // Initialize the whitelist with is_whitelisted set to false by default
-        self.whitelist.set_inner(Whitelist { 
-            is_whitelisted: true,
-            user: self.user.key(),
-            bump: bumps.whitelist,
+impl<'info> AddToWhiteList<'info> {
+    pub fn add_to_whitelist(&mut self, address: Pubkey, bumps: &AddToWhiteListBumps) -> Result<()> {
+        self.whitelist_entry.set_inner(Whitelist {
+            address,
+            bump: bumps.whitelist_entry,
         });
 
+        msg!("Added {} to whitelist", address);
         Ok(())
     }
 }
 
-#[derive(Accounts)]
-pub struct UpdateWhitelist<'info> {
-    #[account(mut)]
-    pub admin: Signer<'info>,
-
-    #[account()]
-    pub mint: InterfaceAccount<'info, Mint>,
-
-    #[account(
-        mut,
-        seeds = [b"whitelist", whitelist.user.as_ref()],
-        bump = whitelist.bump,
-    )]
-    pub whitelist: Account<'info, Whitelist>,
-}
-
-impl<'info> UpdateWhitelist<'info> {
-    pub fn update_whitelist(&mut self, is_whitelisted: bool) -> Result<()> {
-        self.whitelist.is_whitelisted = is_whitelisted;
-        msg!("Whitelist updated: {} is_whitelisted = {}", self.whitelist.user, is_whitelisted);
+impl<'info> RemoveFromWhiteList<'info> {
+    pub fn remove_from_whitelist(&mut self, address: Pubkey) -> Result<()> {
+        msg!("Remove {} from whitelist", address);
         Ok(())
     }
 }

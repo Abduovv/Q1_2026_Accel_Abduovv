@@ -1,0 +1,23 @@
+use anchor_lang::prelude::*;
+
+use crate::state::UserData;
+
+#[derive(Accounts)]
+pub struct CloseUser<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    #[account(
+        mut,
+        close = user,
+        seeds = [b"user", user.key().as_ref()],
+        bump = user_account.signer_bump,
+    )]
+    pub user_account: Box<Account<'info, UserData>>,
+    pub system_program: Program<'info, System>,
+}
+
+impl<'info> CloseUser<'info> {
+    pub fn close(&mut self) -> Result<()> {
+        Ok(())
+    }
+}

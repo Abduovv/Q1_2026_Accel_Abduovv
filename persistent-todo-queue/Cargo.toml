@@ -1,0 +1,10 @@
+[package]
+name = "persistent-todo-queue"
+version = "0.1.0"
+edition = "2021"
+description = "A CLI-based Todo application with persistent FIFO queue using Borsh serialization"
+
+[dependencies]
+borsh = "1.5"
+borsh-derive = "1.5"
+chrono = "0.4"

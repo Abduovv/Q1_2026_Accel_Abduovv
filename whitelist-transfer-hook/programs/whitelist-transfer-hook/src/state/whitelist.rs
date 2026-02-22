@@ -1,9 +1,11 @@
 use anchor_lang::prelude::*;
 
 #[account]
-#[derive(InitSpace)]
 pub struct Whitelist {
-    pub is_whitelisted: bool,
-    pub user: Pubkey,
+    pub address: Pubkey,
     pub bump: u8,
+}
+
+impl Whitelist {
+    pub const LEN: usize = 8 + 32 + 1;
 }

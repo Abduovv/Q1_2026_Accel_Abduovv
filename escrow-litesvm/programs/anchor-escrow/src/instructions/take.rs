@@ -1,122 +1,140 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
-    associated_token::AssociatedToken, 
-    token_interface::
-    {
-        Mint, 
-        TokenAccount, 
-        TokenInterface, 
-        TransferChecked, 
-        transfer_checked, 
-        CloseAccount, 
-        close_account
-    }};
+    associated_token::AssociatedToken,
+    token::{close_account, transfer, CloseAccount, Mint, Token, TokenAccount, Transfer},
+};
 
+use crate::constants::{ESCROW_SEED, LOCK_PERIOD};
+use crate::error::CustomError;
+use crate::state::Escrow;
 
-use crate::state::{Escrow, AFTER_FIVE_DAYS};
-
-//Create context
 #[derive(Accounts)]
 pub struct Take<'info> {
     #[account(mut)]
     pub taker: Signer<'info>,
     #[account(mut)]
-    pub maker: SystemAccount<'info>,
-    pub mint_a: InterfaceAccount<'info, Mint>,
-    pub mint_b: InterfaceAccount<'info, Mint>,
-    #[account(
-        init_if_needed,
-        payer = taker,
-        associated_token::mint = mint_a,
-        associated_token::authority = taker,
-    )]
-    pub taker_ata_a: InterfaceAccount<'info, TokenAccount>,
-    #[account(
-        mut,
-        associated_token::mint = mint_b,
-        associated_token::authority = taker,
-    )]
-    pub taker_ata_b: InterfaceAccount<'info, TokenAccount>,
-    #[account(
-        init_if_needed,
-        payer = taker,
-        associated_token::mint = mint_b,
-        associated_token::authority = maker,
-    )]
-    pub maker_ata_b: InterfaceAccount<'info, TokenAccount>,
+    pub owner: SystemAccount<'info>,
+    pub sell_token: Account<'info, Mint>,
+    pub buy_token: Account<'info, Mint>,
+    #[account(mut)]
+    pub taker_ata_a: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub taker_ata_b: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub owner_ata_b: Account<'info, TokenAccount>,
     #[account(
         mut,
-        close = maker,
-        has_one = maker,
-        has_one = mint_a,
-        has_one = mint_b,
-        seeds = [b"escrow", maker.key().as_ref(), escrow.seed.to_le_bytes().as_ref()],
-        bump = escrow.bump,
+        close = owner,
+        has_one = owner,
+        has_one = sell_token,
+        has_one = buy_token,
+        seeds = [ESCROW_SEED, owner.key().as_ref(), escrow.offer_id.to_le_bytes().as_ref()],
+        bump = escrow.vault_bump,
     )]
     pub escrow: Account<'info, Escrow>,
-    #[account(
-        mut,
-        associated_token::mint = mint_a,
-        associated_token::authority = escrow,
-    )]
-    pub vault: InterfaceAccount<'info, TokenAccount>,
+    #[account(mut)]
+    pub vault: Account<'info, TokenAccount>,
+    pub clock: Sysvar<'info, Clock>,
     pub associated_token_program: Program<'info, AssociatedToken>,
-    pub token_program: Interface<'info, TokenInterface>,
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
-//Deposit tokens from taker to maker
-//Transfer tokens from vault to taker
-//Close vault account
 impl<'info> Take<'info> {
-    pub fn deposit(&mut self) -> Result<()> {
+    pub fn verify_conditions(&self) -> Result<()> {
+        let current_time = self.clock.unix_timestamp;
 
-        let clock = Clock::get().map_err(|_| ErrorCode::ClockNotFound)?;
-        require!(
-            clock.unix_timestamp - self.escrow.created_at >= AFTER_FIVE_DAYS,
-            ErrorCode::EscrowExpired
+        require_keys_eq!(
+            self.taker_ata_a.owner,
+            self.taker.key(),
+            CustomError::OwnershipValidationFailed
+        );
+        require_keys_eq!(
+            self.taker_ata_a.mint,
+            self.sell_token.key(),
+            CustomError::TokenAccountMismatch
         );
 
+        require_keys_eq!(
+            self.taker_ata_b.owner,
+            self.taker.key(),
+            CustomError::OwnershipValidationFailed
+        );
+        require_keys_eq!(
+            self.taker_ata_b.mint,
+            self.buy_token.key(),
+            CustomError::TokenAccountMismatch
+        );
+
+        require_keys_eq!(
+            self.owner_ata_b.owner,
+            self.owner.key(),
+            CustomError::OwnershipValidationFailed
+        );
+        require_keys_eq!(
+            self.owner_ata_b.mint,
+            self.buy_token.key(),
+            CustomError::TokenAccountMismatch
+        );
+
+        require_keys_eq!(
+            self.vault.owner,
+            self.escrow.key(),
+            CustomError::OwnershipValidationFailed
+        );
+        require_keys_eq!(
+            self.vault.mint,
+            self.sell_token.key(),
+            CustomError::TokenAccountMismatch
+        );
+
+        require!(
+            current_time >= self.escrow.created_time + LOCK_PERIOD,
+            CustomError::TimeLockActive,
+        );
+
+        Ok(())
+    }
+
+    pub fn transfer_payment(&mut self) -> Result<()> {
         let cpi_program = self.token_program.to_account_info();
 
-        let cpi_accounts = TransferChecked {
+        let cpi_accounts = Transfer {
             from: self.taker_ata_b.to_account_info(),
-            to: self.maker_ata_b.to_account_info(),
+            to: self.owner_ata_b.to_account_info(),
             authority: self.taker.to_account_info(),
-            mint: self.mint_b.to_account_info(),
         };
 
         let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
 
-        transfer_checked(cpi_ctx, self.escrow.receive, self.mint_b.decimals)
+        transfer(cpi_ctx, self.escrow.target_amount)
     }
 
-    pub fn withdraw_and_close_vault(&mut self) -> Result<()> {
+    pub fn release_and_close(&mut self) -> Result<()> {
         let signer_seeds: [&[&[u8]]; 1] = [&[
-            b"escrow",
-            self.maker.key.as_ref(),
-            &self.escrow.seed.to_le_bytes()[..],
-            &[self.escrow.bump]
+            ESCROW_SEED,
+            self.escrow.owner.as_ref(),
+            &self.escrow.offer_id.to_le_bytes()[..],
+            &[self.escrow.vault_bump],
         ]];
 
         let cpi_program = self.token_program.to_account_info();
 
-        let cpi_accounts = TransferChecked {
+        let cpi_accounts = Transfer {
             from: self.vault.to_account_info(),
             to: self.taker_ata_a.to_account_info(),
             authority: self.escrow.to_account_info(),
-            mint: self.mint_a.to_account_info(),
         };
 
         let cpi_context = CpiContext::new_with_signer(cpi_program, cpi_accounts, &signer_seeds);
 
-        transfer_checked(cpi_context, self.vault.amount, self.mint_a.decimals)?;
+        transfer(cpi_context, self.vault.amount)?;
 
         let cpi_program = self.token_program.to_account_info();
 
         let cpi_accounts = CloseAccount {
             account: self.vault.to_account_info(),
-            destination: self.maker.to_account_info(),
+            destination: self.owner.to_account_info(),
             authority: self.escrow.to_account_info(),
         };
 
@@ -124,12 +142,4 @@ impl<'info> Take<'info> {
 
         close_account(cpi_context)
     }
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Escrow has expired")]
-    EscrowExpired,
-    #[msg("Clock sysvar not found")]
-    ClockNotFound,
 }
